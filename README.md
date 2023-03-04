@@ -3,7 +3,7 @@ This is an experimental implementation to solve easy 2d puzzles by using [ZOD](h
 
 ## Status
 - [X] A preliminary validation and type collection for the cells and gamefield
-- [] Working out the rule functions for cells and gamefield
-- [] Propagation through the gamefield through solidJS components for cells and gamefield.
+- [ ] Working out the rule functions for cells and gamefield
+- [ ] Propagation through the gamefield through solidJS components for cells and gamefield.
 
 ### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
