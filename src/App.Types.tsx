@@ -7,9 +7,9 @@ import { MAXROW, MAXCOL } from './Binario'
  * The size of the game square should be set by the game itself
  */
 const rowcolIndexSchema = z.number().max(50).positive(),
-  GameCoordinateSchema = z.tuple([rowcolIndexSchema, rowcolIndexSchema])
+  CellCoordinateSchema = z.tuple([rowcolIndexSchema, rowcolIndexSchema])
 export type RowColIndex = z.infer<typeof rowcolIndexSchema>
-export type GameCoordinate = z.infer<typeof GameCoordinateSchema>
+export type CellCoordinate = z.infer<typeof CellCoordinateSchema>
 
 // Convention for what coordinates come first (row, col)
 enum Coordinate {
@@ -28,7 +28,7 @@ enum Coordinate {
  * errors are present, CELLRESULTS are updated (by iteration). CoordinateCollections can be rows,
  * columns or any area defined around individual cells.
  */
-const CoordinateCollectionSchema = z.array(GameCoordinateSchema)
+const CoordinateCollectionSchema = z.array(CellCoordinateSchema)
 export type CoordinateCollection = z.infer<typeof CoordinateCollectionSchema>
 
 // HELPERS
@@ -89,25 +89,33 @@ export type CellPossibilities = z.infer<typeof CellPossibilitiesSchema>
 
 /**
  * This leads to the following for the cells themselves:
- * cellDefined: a boolean defining whether the cell content has been found or is fixed.
- *    --> computed as cellPossibilities array having a length of 1 element
- * cellCoordinate: the coordinates of the cell
- *    --> NOT stored in the cell, but in the GameField itself. This enables the GameField to
- *        be searched Gamefield[row][col]=cell
- * cellInvariant: a cell can not be changed. For instance cells from the initial game state.
- * cellSolution: the remaining possible CellContent for the cell.
- * --- The cell is considered 'found' or 'set' if this list is of length 1.
+ *
+ * cell.Possibilities: the remaining possible CellContent for the cell.
+ * --- The cell is considered 'found', 'fixed' or 'set' if this list is of length 1.
  * --- The cell is considered 'invalid' if this list is of length 0.
- * --- Unitialised cells will have the full cellPossibilities as their initial cellSolution
- * The type of cellSolution is therefore cellPossibilities.
+ * --- Uninitialised cells will have the full cellPossibilities as their initial cellSolution
+ * The type of cellContent is therefore cellPossibilities.
+ *
+ * Cell.isFixed: a cell can not be changed. For instance cells from the initial game state.
+ *
+ * Cell.Coordinates: the coordinates of the cell
+ *    --> stored in the cell, but comes from the GameField itself. This enables the GameField to
+ *        be searched Gamefield[row][col]=cell
  *
  */
-const CellInvariantSchema = z.boolean()
 enum GameCell {
   Possibilities = 0,
-  isInvariant = 1,
+  isFixed = 1,
+  Coordinates = 2,
 }
-const CellSchema = z.tuple([CellPossibilitiesSchema, CellInvariantSchema])
+const CellFixedSchema = z.boolean()
+type CellFixed = z.infer<typeof CellFixedSchema>
+
+const CellSchema = z.tuple([
+  CellPossibilitiesSchema,
+  CellFixedSchema,
+  CellCoordinateSchema,
+])
 export type Cell = z.infer<typeof CellSchema>
 
 // HELPERS
@@ -126,7 +134,7 @@ export const cellIsFound = (cell: Cell): boolean => {
  * @returns
  */
 export const cellCanNotBeChanged = (cell: Cell): boolean => {
-  return cell[GameCell.isInvariant]
+  return cell[GameCell.isFixed]
 }
 
 /**
@@ -135,26 +143,34 @@ export const cellCanNotBeChanged = (cell: Cell): boolean => {
  * GameField[row:RowColIndex][col:RowColIndex] returns a Cell
  */
 const GameFieldSchema = z.array(z.array(CellSchema))
-type GameField = z.infer<typeof GameFieldSchema>
+export type GameField = z.infer<typeof GameFieldSchema>
 
 /**
  * cellAt returns the cell At coordinates c for a game g
  */
-export const cellAt = (c: GameCoordinate, g: GameField): Cell => {
+export const cellAt = (c: CellCoordinate, g: GameField): Cell => {
   return g[c[Coordinate.Row]][c[Coordinate.Column]]
 }
 /**
- * setCellAt sets the cell at coordinate c to cell in gamefield g.
- * @param c 
- * @param g 
- * @param cell 
+ * setCellAt updates the cell at coordinate c to cell in gamefield g.
+ * @param c
+ * @param g
+ * @param cell
  */
 export const setCellAt = (
-  c: GameCoordinate,
+  c: CellCoordinate,
   g: GameField,
   cell: Cell
 ): void => {
   g[c[Coordinate.Row]][c[Coordinate.Column]] = cell
+}
+
+export const createCell = (
+  initialContent: CellPossibilities,
+  isFixed: CellFixed,
+  c: CellCoordinate
+): Cell => {
+  return [initialContent, isFixed, c]
 }
 
 /**
@@ -180,7 +196,7 @@ export const isCoordinateCollectionAllFound = (
 /**
  * initialiseGame creates a set of Cells with cellPossibilities all with length 1 (defined values).
  * Note that all other cell manipulations will happen through the front-end reactivity
- * 
+ *
  * @param content: the content to add, for instance 0 for BINARIO
  * @param cc: the collection of coordinates to fill with that content
  * @param g
@@ -191,22 +207,23 @@ export const initializeGame = (
   cc: CoordinateCollection,
   g: GameField
 ): void => {
-  // create the Cell
-  let newCell: Cell = [Array(content), true]
-  // add the cell to the gamefield if it is a Found cell
-  if (cellIsFound(newCell)) {
+  cc.forEach((coordinate) => {
+    // create the Cell
+    // TODO: enum GameCell should be used!
+    let newCell: Cell = createCell(Array(content), true, coordinate)
     console.log(`Placing Cell `, newCell, ' in gamefield coordinates:')
-    cc.forEach((coordinate) => {
+    if (cellIsFound(newCell)) {
       console.log(
-        `${coordinate[Coordinate.Row]} , ${
-          coordinate[Coordinate.Column]
-        }`
+        `${coordinate[Coordinate.Row]} , ${coordinate[Coordinate.Column]}`
       )
+      // add the cell to the gamefield if it is a Found cell
       setCellAt(coordinate, g, newCell)
-    })
-  } else {
-    console.error(`GameFields cannot be initialised with Cells which have several possibilities for content.`)
-  }
+    } else {
+      console.error(
+        `GameFields cannot be initialised with Cells which have several possibilities for content.`
+      )
+    }
+  })
 }
 
 /**
@@ -217,8 +234,14 @@ export const initializeGame = (
  * Examples:
  * - BINARIO columns may maximally contain 6 1s and 6 0s.
  */
-const CellRuleSchema = z.function().args(CoordinateCollectionSchema, CellSchema).returns(z.boolean())
+const CellRuleSchema = z
+  .function()
+  .args(CoordinateCollectionSchema, CellSchema)
+  .returns(z.boolean())
 export type CellRule = z.infer<typeof CellRuleSchema>
 
-const GameFieldRuleSchema = z.function().args(CoordinateCollectionSchema, GameFieldSchema).returns(z.boolean())
+const GameFieldRuleSchema = z
+  .function()
+  .args(CoordinateCollectionSchema, GameFieldSchema)
+  .returns(z.boolean())
 export type GameRule = z.infer<typeof GameFieldRuleSchema>
