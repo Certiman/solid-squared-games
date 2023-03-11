@@ -1,4 +1,4 @@
-import { CellPossibilities, CellContent, RowColIndex, CellRule, GameRule } from './AppTypes'
+import { CellPossibilities, CellContent, RowColIndex, CellRule, GameRule } from './App.Types'
 
 /** Specific game data
  * cellResult is the unique string which will be set to a cell.
